@@ -10,6 +10,9 @@ import {
   Download,
   Play,
   RotateCcw,
+  FileCheck,
+  XCircle,
+  File,
 } from 'lucide-react';
 import { useAppStore } from '@/store/useAppStore';
 import {
@@ -22,6 +25,7 @@ import {
 import { TaskStatusBadge, AlertLevelBadge } from '@/components/ui/StatusBadge';
 import { ProgressBar } from '@/components/ui/StatCard';
 import { TaskStatus, AlertLevel } from '@shared/types';
+import { generatePDFReport } from '@/utils/pdfReport';
 
 const statusSteps = [
   { key: TaskStatus.PENDING_VALIDATION, label: '待校验', icon: '⏳' },
@@ -47,6 +51,45 @@ export default function TaskDetail() {
   } = useAppStore();
 
   const [activeTab, setActiveTab] = useState<'overview' | 'sensitivity' | 'noise' | 'waveform' | 'posterior' | 'approvals' | 'alerts'>('overview');
+  const [generatingPDF, setGeneratingPDF] = useState(false);
+
+  const handleGeneratePDF = async () => {
+    if (!currentTask || !currentResult || !currentDetector || !currentNoiseModel) return;
+
+    setGeneratingPDF(true);
+    try {
+      await new Promise((resolve) => setTimeout(resolve, 100));
+
+      generatePDFReport({
+        taskName: currentTask.name,
+        taskId: currentTask.id,
+        createdAt: currentTask.createdAt,
+        detectorName: currentDetector.name,
+        noiseModelVersion: currentNoiseModel.version,
+        signalSourceType: currentTask.signalSource.type,
+        mass1: currentTask.signalSource.mass1,
+        mass2: currentTask.signalSource.mass2,
+        spin1: currentTask.signalSource.spin1,
+        spin2: currentTask.signalSource.spin2,
+        distance: currentTask.signalSource.distance,
+        snr: currentResult.snr,
+        sensitivityFrequencies: currentResult.sensitivityCurve.frequencies,
+        sensitivityValues: currentResult.sensitivityCurve.values,
+        noiseFrequencies: currentResult.noisePowerSpectrum.frequencies,
+        noiseValues: currentResult.noisePowerSpectrum.values,
+        waveformTimes: currentResult.injectedSignal.times,
+        waveformValues: currentResult.injectedSignal.values,
+        massPosterior: currentResult.posteriorSamples.mass1,
+        spinPosterior: currentResult.posteriorSamples.spin1,
+        distancePosterior: currentResult.posteriorSamples.distance,
+        massTrue: currentTask.signalSource.mass1,
+        spinTrue: currentTask.signalSource.spin1,
+        distanceTrue: currentTask.signalSource.distance,
+      });
+    } finally {
+      setGeneratingPDF(false);
+    }
+  };
 
   useEffect(() => {
     if (id) {
@@ -108,9 +151,13 @@ export default function TaskDetail() {
             </button>
           )}
           {hasResults && (
-            <button className="px-4 py-2 bg-cyber-500/20 text-cyber-300 text-sm font-medium rounded-lg hover:bg-cyber-500/30 flex items-center gap-2 transition-colors">
+            <button
+              onClick={handleGeneratePDF}
+              disabled={generatingPDF}
+              className="px-4 py-2 bg-cyber-500/20 text-cyber-300 text-sm font-medium rounded-lg hover:bg-cyber-500/30 flex items-center gap-2 transition-colors disabled:opacity-50"
+            >
               <FileText className="w-4 h-4" />
-              生成报告
+              {generatingPDF ? '生成中...' : '生成报告'}
             </button>
           )}
           {hasResults && (
@@ -242,6 +289,60 @@ export default function TaskDetail() {
                 </div>
               </div>
             </div>
+
+            {(currentTask.uploadedDetectorFile || currentTask.uploadedNoiseFile) && (
+              <div className="glass-card p-6">
+                <h3 className="text-lg font-semibold text-space-100 mb-4">上传文件信息</h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {currentTask.uploadedDetectorFile && (
+                    <div className="p-4 rounded-lg bg-space-800/30 border border-cyber-500/20">
+                      <div className="flex items-start gap-3">
+                        <div className="w-10 h-10 rounded-lg bg-cyber-500/20 flex items-center justify-center flex-shrink-0">
+                          <File className="w-5 h-5 text-cyber-400" />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-medium text-space-100 truncate">
+                            {currentTask.uploadedDetectorFile.fileName}
+                          </p>
+                          <p className="text-xs text-space-400 mt-1">
+                            {(currentTask.uploadedDetectorFile.fileSize / 1024).toFixed(1)} KB
+                          </p>
+                          <p className="text-xs text-cyber-400 mt-1">
+                            探测器构型: {currentDetector?.name || '-'}
+                          </p>
+                          <p className="text-xs text-space-500 mt-1">
+                            上传于 {new Date(currentTask.uploadedDetectorFile.uploadedAt).toLocaleString('zh-CN')}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                  {currentTask.uploadedNoiseFile && (
+                    <div className="p-4 rounded-lg bg-space-800/30 border border-cyber-500/20">
+                      <div className="flex items-start gap-3">
+                        <div className="w-10 h-10 rounded-lg bg-signal-purple/20 flex items-center justify-center flex-shrink-0">
+                          <File className="w-5 h-5 text-signal-purple" />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-medium text-space-100 truncate">
+                            {currentTask.uploadedNoiseFile.fileName}
+                          </p>
+                          <p className="text-xs text-space-400 mt-1">
+                            {(currentTask.uploadedNoiseFile.fileSize / 1024).toFixed(1)} KB
+                          </p>
+                          <p className="text-xs text-signal-purple mt-1">
+                            噪声版本: {currentNoiseModel?.version || '-'}
+                          </p>
+                          <p className="text-xs text-space-500 mt-1">
+                            上传于 {new Date(currentTask.uploadedNoiseFile.uploadedAt).toLocaleString('zh-CN')}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
 
             {currentResult && (
               <div className="glass-card p-6">
@@ -473,49 +574,109 @@ export default function TaskDetail() {
       )}
 
       {activeTab === 'approvals' && (
-        <div className="glass-card p-6">
-          <h3 className="text-lg font-semibold text-space-100 mb-4">审批记录</h3>
-          {taskApprovals.length > 0 ? (
-            <div className="space-y-4">
-              {taskApprovals.map((approval) => (
-                <div
-                  key={approval.id}
-                  className={`p-4 rounded-lg border-l-4 ${
-                    approval.decision === 'approved'
-                      ? 'bg-signal-green/5 border-signal-green/30'
-                      : 'bg-signal-red/5 border-signal-red/30'
-                  }`}
-                >
-                  <div className="flex items-center justify-between mb-2">
-                    <div className="flex items-center gap-2">
+        <div className="space-y-6">
+          <div className="glass-card p-6">
+            <h3 className="text-lg font-semibold text-space-100 mb-4">审批记录</h3>
+            {taskApprovals.length > 0 ? (
+              <div className="space-y-4">
+                {taskApprovals.map((approval) => (
+                  <div
+                    key={approval.id}
+                    className={`p-4 rounded-lg border-l-4 ${
+                      approval.decision === 'approved'
+                        ? 'bg-signal-green/5 border-signal-green/30'
+                        : 'bg-signal-red/5 border-signal-red/30'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="flex items-center gap-2">
+                        <span
+                          className={`px-2 py-0.5 text-xs font-medium rounded ${
+                            approval.decision === 'approved'
+                              ? 'bg-signal-green/20 text-signal-green'
+                              : 'bg-signal-red/20 text-signal-red'
+                          }`}
+                        >
+                          {approval.decision === 'approved' ? '通过' : '驳回'}
+                        </span>
+                        <span className="text-sm text-space-300">
+                          {approval.level === 'verification' ? '数据验证' : '项目确认'}
+                        </span>
+                      </div>
+                      <span className="text-xs text-space-500">
+                        {new Date(approval.approvedAt).toLocaleString('zh-CN')}
+                      </span>
+                    </div>
+                    <p className="text-sm text-space-400">审批人: {approval.approver}</p>
+                    {approval.comment && (
+                      <p className="text-sm text-space-300 mt-2">意见: {approval.comment}</p>
+                    )}
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="text-center py-12">
+                <Clock className="w-12 h-12 text-space-600 mx-auto mb-3" />
+                <p className="text-space-400">暂无审批记录</p>
+              </div>
+            )}
+          </div>
+
+          {currentTask.announcementPush && (
+            <div className="glass-card p-6">
+              <h3 className="text-lg font-semibold text-space-100 mb-4">公告系统推送结果</h3>
+              <div className="p-4 rounded-lg bg-space-800/30 border border-cyber-500/20">
+                <div className="flex items-start gap-4">
+                  <div
+                    className={`w-12 h-12 rounded-full flex items-center justify-center flex-shrink-0 ${
+                      currentTask.announcementPush.status === 'success'
+                        ? 'bg-signal-green/20'
+                        : 'bg-signal-red/20'
+                    }`}
+                  >
+                    {currentTask.announcementPush.status === 'success' ? (
+                      <FileCheck className="w-6 h-6 text-signal-green" />
+                    ) : (
+                      <XCircle className="w-6 h-6 text-signal-red" />
+                    )}
+                  </div>
+                  <div className="flex-1">
+                    <div className="flex items-center gap-2 mb-2">
                       <span
                         className={`px-2 py-0.5 text-xs font-medium rounded ${
-                          approval.decision === 'approved'
+                          currentTask.announcementPush.status === 'success'
                             ? 'bg-signal-green/20 text-signal-green'
                             : 'bg-signal-red/20 text-signal-red'
                         }`}
                       >
-                        {approval.decision === 'approved' ? '通过' : '驳回'}
-                      </span>
-                      <span className="text-sm text-space-300">
-                        {approval.level === 'verification' ? '数据验证' : '项目确认'}
+                        {currentTask.announcementPush.status === 'success' ? '推送成功' : '推送失败'}
                       </span>
                     </div>
-                    <span className="text-xs text-space-500">
-                      {new Date(approval.approvedAt).toLocaleString('zh-CN')}
-                    </span>
+                    <div className="space-y-2 text-sm">
+                      <div className="flex items-center gap-2">
+                        <span className="text-space-400">事件ID:</span>
+                        <span className="text-space-200 font-mono">
+                          {currentTask.announcementPush.eventId}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-space-400">推送时间:</span>
+                        <span className="text-space-200">
+                          {new Date(currentTask.announcementPush.pushedAt).toLocaleString('zh-CN')}
+                        </span>
+                      </div>
+                      {currentTask.announcementPush.errorMessage && (
+                        <div className="flex items-start gap-2">
+                          <span className="text-space-400">错误信息:</span>
+                          <span className="text-signal-red">
+                            {currentTask.announcementPush.errorMessage}
+                          </span>
+                        </div>
+                      )}
+                    </div>
                   </div>
-                  <p className="text-sm text-space-400">审批人: {approval.approver}</p>
-                  {approval.comment && (
-                    <p className="text-sm text-space-300 mt-2">意见: {approval.comment}</p>
-                  )}
                 </div>
-              ))}
-            </div>
-          ) : (
-            <div className="text-center py-12">
-              <Clock className="w-12 h-12 text-space-600 mx-auto mb-3" />
-              <p className="text-space-400">暂无审批记录</p>
+              </div>
             </div>
           )}
         </div>

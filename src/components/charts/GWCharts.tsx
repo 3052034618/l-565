@@ -1,5 +1,10 @@
 import ReactECharts from 'echarts-for-react';
+import { forwardRef, useImperativeHandle, useRef } from 'react';
 import { FrequencySeries, TimeSeries, PosteriorSamples } from '@shared/types';
+
+export interface ChartRef {
+  getDataURL: () => string;
+}
 
 interface SensitivityChartProps {
   sensitivityCurve: FrequencySeries;
@@ -7,84 +12,95 @@ interface SensitivityChartProps {
   height?: number;
 }
 
-export function SensitivityChart({ sensitivityCurve, designCurve, height = 300 }: SensitivityChartProps) {
-  const option = {
-    backgroundColor: 'transparent',
-    tooltip: {
-      trigger: 'axis',
-      backgroundColor: 'rgba(10, 22, 40, 0.9)',
-      borderColor: 'rgba(0, 212, 255, 0.3)',
-      textStyle: { color: '#e0f0ff', fontSize: 12 },
-      formatter: (params: any) => {
-        const f = params[0].value[0];
-        let html = `<div style="font-family: monospace;">频率: ${f.toFixed(1)} Hz<br/>`;
-        params.forEach((p: any) => {
-          html += `${p.seriesName}: ${p.value[1].toExponential(2)} 1/√Hz<br/>`;
-        });
-        html += '</div>';
-        return html;
+export const SensitivityChart = forwardRef<ChartRef, SensitivityChartProps>(
+  function SensitivityChart({ sensitivityCurve, designCurve, height = 300 }, ref) {
+    const chartRef = useRef<ReactECharts>(null);
+
+    useImperativeHandle(ref, () => ({
+      getDataURL: () => {
+        const instance = chartRef.current?.getEchartsInstance();
+        return instance?.getDataURL({ backgroundColor: '#0a1628', pixelRatio: 2 }) || '';
       },
-    },
-    grid: {
-      left: '12%',
-      right: '5%',
-      top: '10%',
-      bottom: '15%',
-    },
-    xAxis: {
-      type: 'log',
-      name: '频率 (Hz)',
-      nameTextStyle: { color: '#6b8fa8', fontSize: 11 },
-      axisLine: { lineStyle: { color: 'rgba(0, 212, 255, 0.2)' } },
-      axisLabel: { color: '#8ba9c0', fontSize: 10 },
-      splitLine: { lineStyle: { color: 'rgba(0, 212, 255, 0.05)', type: 'dashed' } },
-      minorSplitLine: { show: false },
-    },
-    yAxis: {
-      type: 'log',
-      name: '应变 ASD (1/√Hz)',
-      nameTextStyle: { color: '#6b8fa8', fontSize: 11 },
-      axisLine: { lineStyle: { color: 'rgba(0, 212, 255, 0.2)' } },
-      axisLabel: {
-        color: '#8ba9c0',
-        fontSize: 10,
-        formatter: (val: number) => val.toExponential(0),
-      },
-      splitLine: { lineStyle: { color: 'rgba(0, 212, 255, 0.05)', type: 'dashed' } },
-      minorSplitLine: { show: false },
-    },
-    series: [
-      {
-        name: '当前灵敏度',
-        type: 'line',
-        data: sensitivityCurve.frequencies.map((f, i) => [f, sensitivityCurve.values[i]]),
-        smooth: true,
-        lineStyle: { color: '#00d4ff', width: 2 },
-        itemStyle: { color: '#00d4ff' },
-        areaStyle: {
-          color: {
-            type: 'linear',
-            x: 0, y: 0, x2: 0, y2: 1,
-            colorStops: [
-              { offset: 0, color: 'rgba(0, 212, 255, 0.2)' },
-              { offset: 1, color: 'rgba(0, 212, 255, 0.02)' },
-            ],
-          },
+    }));
+
+    const option = {
+      backgroundColor: 'transparent',
+      tooltip: {
+        trigger: 'axis',
+        backgroundColor: 'rgba(10, 22, 40, 0.9)',
+        borderColor: 'rgba(0, 212, 255, 0.3)',
+        textStyle: { color: '#e0f0ff', fontSize: 12 },
+        formatter: (params: any) => {
+          const f = params[0].value[0];
+          let html = `<div style="font-family: monospace;">频率: ${f.toFixed(1)} Hz<br/>`;
+          params.forEach((p: any) => {
+            html += `${p.seriesName}: ${p.value[1].toExponential(2)} 1/√Hz<br/>`;
+          });
+          html += '</div>';
+          return html;
         },
       },
-      ...(designCurve ? [{
-        name: '设计目标',
-        type: 'line',
-        data: designCurve.frequencies.map((f, i) => [f, designCurve.values[i] * 0.8]),
-        smooth: true,
-        lineStyle: { color: '#00ff88', width: 1, type: 'dashed' as const },
-        itemStyle: { color: '#00ff88' },
-      }] : []),
-    ],
-  };
+      grid: {
+        left: '12%',
+        right: '5%',
+        top: '10%',
+        bottom: '15%',
+      },
+      xAxis: {
+        type: 'log',
+        name: '频率 (Hz)',
+        nameTextStyle: { color: '#6b8fa8', fontSize: 11 },
+        axisLine: { lineStyle: { color: 'rgba(0, 212, 255, 0.2)' } },
+        axisLabel: { color: '#8ba9c0', fontSize: 10 },
+        splitLine: { lineStyle: { color: 'rgba(0, 212, 255, 0.05)', type: 'dashed' } },
+        minorSplitLine: { show: false },
+      },
+      yAxis: {
+        type: 'log',
+        name: '应变 ASD (1/√Hz)',
+        nameTextStyle: { color: '#6b8fa8', fontSize: 11 },
+        axisLine: { lineStyle: { color: 'rgba(0, 212, 255, 0.2)' } },
+        axisLabel: {
+          color: '#8ba9c0',
+          fontSize: 10,
+          formatter: (val: number) => val.toExponential(0),
+        },
+        splitLine: { lineStyle: { color: 'rgba(0, 212, 255, 0.05)', type: 'dashed' } },
+        minorSplitLine: { show: false },
+      },
+      series: [
+        {
+          name: '当前灵敏度',
+          type: 'line',
+          data: sensitivityCurve.frequencies.map((f, i) => [f, sensitivityCurve.values[i]]),
+          smooth: true,
+          lineStyle: { color: '#00d4ff', width: 2 },
+          itemStyle: { color: '#00d4ff' },
+          areaStyle: {
+            color: {
+              type: 'linear',
+              x: 0, y: 0, x2: 0, y2: 1,
+              colorStops: [
+                { offset: 0, color: 'rgba(0, 212, 255, 0.2)' },
+                { offset: 1, color: 'rgba(0, 212, 255, 0.02)' },
+              ],
+            },
+          },
+        },
+        ...(designCurve ? [{
+          name: '设计目标',
+          type: 'line',
+          data: designCurve.frequencies.map((f, i) => [f, designCurve.values[i] * 0.8]),
+          smooth: true,
+          lineStyle: { color: '#00ff88', width: 1, type: 'dashed' as const },
+          itemStyle: { color: '#00ff88' },
+        }] : []),
+      ],
+    };
 
-  return <ReactECharts option={option} style={{ height }} theme="dark" />;
-}
+    return <ReactECharts ref={chartRef} option={option} style={{ height }} theme="dark" />;
+  }
+);
 
 interface NoiseComponentsChartProps {
   frequencies: number[];

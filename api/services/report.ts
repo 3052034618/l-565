@@ -69,9 +69,19 @@ class ReportService {
     data: Record<string, unknown>;
     fileSize: number;
   } {
-    const tasks = dataStore.getTasks({ detectorConfigId }).filter((t) => {
+    const allTasks = dataStore.getTasks({ detectorConfigId });
+    const noiseModels = dataStore.getNoiseModels();
+    const targetNoiseModel = noiseModels.find(m => m.version === noiseModelVersion);
+    
+    const tasks = allTasks.filter((t) => {
       const taskDate = new Date(t.createdAt);
-      return taskDate >= new Date(timeWindowStart) && taskDate <= new Date(timeWindowEnd);
+      const dateInRange = taskDate >= new Date(timeWindowStart) && taskDate <= new Date(timeWindowEnd + 'T23:59:59');
+      
+      const noiseMatch = targetNoiseModel 
+        ? t.noiseModelId === targetNoiseModel.id 
+        : true;
+      
+      return dateInRange && noiseMatch;
     });
 
     const exportData: Record<string, unknown> = {

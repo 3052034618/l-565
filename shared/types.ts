@@ -121,6 +121,23 @@ export interface AnalysisTask {
   currentStep: string;
   estimatedTime?: number;
   elapsedTime?: number;
+  uploadedDetectorFile?: UploadedFileInfo;
+  uploadedNoiseFile?: UploadedFileInfo;
+  announcementPush?: AnnouncementPushRecord;
+}
+
+export interface UploadedFileInfo {
+  fileName: string;
+  fileSize: number;
+  uploadedAt: string;
+  content?: string;
+}
+
+export interface AnnouncementPushRecord {
+  pushedAt: string;
+  status: 'success' | 'failed';
+  eventId: string;
+  errorMessage?: string;
 }
 
 export interface Alert {

@@ -23,6 +23,7 @@ export default function DataExport() {
   });
   const [exportType, setExportType] = useState<'response_data' | 'estimation_results' | 'all'>('all');
   const [creating, setCreating] = useState(false);
+  const [downloadingId, setDownloadingId] = useState<string | null>(null);
 
   useEffect(() => {
     fetchDetectors();
@@ -51,6 +52,29 @@ export default function DataExport() {
       });
     } finally {
       setCreating(false);
+    }
+  };
+
+  const handleDownload = async (taskId: string, fileName: string) => {
+    setDownloadingId(taskId);
+    try {
+      const res = await fetch(`/api/export/${taskId}/download`);
+      if (!res.ok) throw new Error('下载失败');
+      
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = fileName || `export_${taskId}.json`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error('Download failed:', err);
+      alert('下载失败，请稍后重试');
+    } finally {
+      setDownloadingId(null);
     }
   };
 
@@ -258,9 +282,17 @@ export default function DataExport() {
                     {new Date(task.createdAt).toLocaleDateString('zh-CN')}
                   </span>
                   {task.status === 'completed' && task.downloadUrl && (
-                    <button className="px-3 py-1.5 bg-cyber-500/20 text-cyber-300 text-sm rounded-lg hover:bg-cyber-500/30 flex items-center gap-1.5 transition-colors">
-                      <Download className="w-4 h-4" />
-                      下载
+                    <button
+                      onClick={() => handleDownload(task.id, `gw_export_${task.id}.json`)}
+                      disabled={downloadingId === task.id}
+                      className="px-3 py-1.5 bg-cyber-500/20 text-cyber-300 text-sm rounded-lg hover:bg-cyber-500/30 flex items-center gap-1.5 transition-colors disabled:opacity-50"
+                    >
+                      {downloadingId === task.id ? (
+                        <Loader className="w-4 h-4 animate-spin" />
+                      ) : (
+                        <Download className="w-4 h-4" />
+                      )}
+                      {downloadingId === task.id ? '下载中' : '下载'}
                     </button>
                   )}
                 </div>

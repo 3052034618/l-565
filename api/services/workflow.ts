@@ -294,7 +294,24 @@ class WorkflowEngine {
 
   private pushToAnnouncementSystem(taskId: string): void {
     const task = dataStore.getTaskById(taskId);
-    console.log(`[公告系统] 任务 ${task?.name || taskId} 已推送到天文事件公告系统`);
+    if (!task) return;
+
+    const success = Math.random() > 0.05;
+
+    const pushRecord = {
+      pushedAt: new Date().toISOString(),
+      status: success ? 'success' as const : 'failed' as const,
+      eventId: success ? `GW${new Date().toISOString().slice(0, 10).replace(/-/g, '')}_${Math.floor(Math.random() * 1000).toString().padStart(3, '0')}` : '',
+      errorMessage: success ? undefined : '公告系统连接超时，请稍后重试',
+    };
+
+    dataStore.setAnnouncementPush(taskId, pushRecord);
+
+    if (success) {
+      console.log(`[公告系统] 任务 ${task.name} 已成功推送至天文事件公告系统，事件ID: ${pushRecord.eventId}`);
+    } else {
+      console.error(`[公告系统] 任务 ${task.name} 推送失败: ${pushRecord.errorMessage}`);
+    }
   }
 
   resumeQualityControl(): void {

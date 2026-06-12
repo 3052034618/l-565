@@ -58,7 +58,7 @@ export class ParameterEstimationService {
     const mChirpSI = chirpMass * Msun;
     const f0 = Math.pow(
       (5 * G * mChirpSI / (c * c * c * c * c * c)) /
-      (256 * Math.PI * Math.PI * Math.PI * Math.PI * Math.PI * timeBeforeMerge * timeBeforeMerge * timeBeforePause),
+      (256 * Math.PI * Math.PI * Math.PI * Math.PI * Math.PI * timeBeforeMerge * timeBeforeMerge * timeBeforeMerge),
       -3 / 8
     );
 

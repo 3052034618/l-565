@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   ArrowLeft,
@@ -7,8 +7,12 @@ import {
   Settings,
   Info,
   Lightbulb,
+  FileText,
+  X,
+  Check,
 } from 'lucide-react';
 import { useAppStore } from '@/store/useAppStore';
+import type { UploadedFileInfo } from '@shared/types';
 
 const signalTypes = [
   { value: 'BBH', label: '双黑洞并合 (BBH)', description: '两个黑洞的引力波并合事件' },
@@ -36,6 +40,73 @@ export default function NewTask() {
     },
   });
   const [submitting, setSubmitting] = useState(false);
+  const [detectorFile, setDetectorFile] = useState<UploadedFileInfo | null>(null);
+  const [noiseFile, setNoiseFile] = useState<UploadedFileInfo | null>(null);
+  const detectorInputRef = useRef<HTMLInputElement>(null);
+  const noiseInputRef = useRef<HTMLInputElement>(null);
+
+  const handleDetectorFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      try {
+        const content = event.target?.result as string;
+        const fileInfo: UploadedFileInfo = {
+          fileName: file.name,
+          fileSize: file.size,
+          uploadedAt: new Date().toISOString(),
+          content,
+        };
+        setDetectorFile(fileInfo);
+
+        const parsed = JSON.parse(content);
+        if (parsed.armLength !== undefined || parsed.laserPower !== undefined) {
+          if (detectors.length > 0) {
+            const matchIdx = parsed.armLength >= 8000 ? 1 : parsed.armLength >= 3000 ? 2 : 0;
+            const match = detectors[matchIdx];
+            if (match) {
+              setFormData((prev) => ({ ...prev, detectorConfigId: match.id }));
+            }
+          }
+        }
+      } catch (err) {
+        console.error('Failed to parse detector file:', err);
+      }
+    };
+    reader.readAsText(file);
+  };
+
+  const handleNoiseFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      try {
+        const content = event.target?.result as string;
+        const fileInfo: UploadedFileInfo = {
+          fileName: file.name,
+          fileSize: file.size,
+          uploadedAt: new Date().toISOString(),
+          content,
+        };
+        setNoiseFile(fileInfo);
+
+        const parsed = JSON.parse(content);
+        if (parsed.version && noiseModels.length > 0) {
+          const match = noiseModels.find((m) => m.version === parsed.version);
+          if (match) {
+            setFormData((prev) => ({ ...prev, noiseModelId: match.id }));
+          }
+        }
+      } catch (err) {
+        console.error('Failed to parse noise model file:', err);
+      }
+    };
+    reader.readAsText(file);
+  };
 
   useEffect(() => {
     fetchDetectors();
@@ -61,7 +132,15 @@ export default function NewTask() {
     if (qualityPaused) return;
     setSubmitting(true);
     try {
-      const result = await createTask(formData as any);
+      const taskData = {
+        name: formData.name,
+        detectorConfigId: formData.detectorConfigId,
+        noiseModelId: formData.noiseModelId,
+        signalSource: formData.signalSource,
+        uploadedDetectorFile: detectorFile,
+        uploadedNoiseFile: noiseFile,
+      };
+      const result = await createTask(taskData as any);
       if (result) {
         navigate(`/tasks/${result.id}`);
       }
@@ -227,14 +306,99 @@ export default function NewTask() {
               )}
             </div>
 
-            <div>
-              <label className="block text-sm font-medium text-space-200 mb-2">
-                上传参数文件 (可选)
-              </label>
-              <div className="border-2 border-dashed border-cyber-500/20 rounded-xl p-8 text-center hover:border-cyber-500/40 transition-colors cursor-pointer">
-                <Upload className="w-10 h-10 text-space-500 mx-auto mb-3" />
-                <p className="text-sm text-space-300 mb-1">拖拽文件到此处，或点击上传</p>
-                <p className="text-xs text-space-500">支持 .json, .txt 格式的探测器参数文件</p>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-space-200 mb-2">
+                  上传探测器设计参数 (可选)
+                </label>
+                <input
+                  ref={detectorInputRef}
+                  type="file"
+                  accept=".json,.txt"
+                  onChange={handleDetectorFileUpload}
+                  className="hidden"
+                />
+                <div
+                  onClick={() => detectorInputRef.current?.click()}
+                  className="border-2 border-dashed border-cyber-500/20 rounded-xl p-6 text-center hover:border-cyber-500/40 transition-colors cursor-pointer"
+                >
+                  {detectorFile ? (
+                    <div className="flex items-center justify-center gap-3">
+                      <div className="w-10 h-10 rounded-full bg-signal-green/20 flex items-center justify-center">
+                        <Check className="w-5 h-5 text-signal-green" />
+                      </div>
+                      <div className="text-left">
+                        <p className="text-sm font-medium text-space-100">{detectorFile.fileName}</p>
+                        <p className="text-xs text-space-400">
+                          {(detectorFile.fileSize / 1024).toFixed(1)} KB
+                        </p>
+                      </div>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setDetectorFile(null);
+                          if (detectorInputRef.current) detectorInputRef.current.value = '';
+                        }}
+                        className="p-1 rounded hover:bg-space-700/50 text-space-400 hover:text-space-200"
+                      >
+                        <X className="w-4 h-4" />
+                      </button>
+                    </div>
+                  ) : (
+                    <>
+                      <FileText className="w-10 h-10 text-space-500 mx-auto mb-3" />
+                      <p className="text-sm text-space-300 mb-1">点击上传探测器参数</p>
+                      <p className="text-xs text-space-500">支持 .json 格式</p>
+                    </>
+                  )}
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-space-200 mb-2">
+                  上传噪声模型文件 (可选)
+                </label>
+                <input
+                  ref={noiseInputRef}
+                  type="file"
+                  accept=".json,.txt"
+                  onChange={handleNoiseFileUpload}
+                  className="hidden"
+                />
+                <div
+                  onClick={() => noiseInputRef.current?.click()}
+                  className="border-2 border-dashed border-cyber-500/20 rounded-xl p-6 text-center hover:border-cyber-500/40 transition-colors cursor-pointer"
+                >
+                  {noiseFile ? (
+                    <div className="flex items-center justify-center gap-3">
+                      <div className="w-10 h-10 rounded-full bg-signal-green/20 flex items-center justify-center">
+                        <Check className="w-5 h-5 text-signal-green" />
+                      </div>
+                      <div className="text-left">
+                        <p className="text-sm font-medium text-space-100">{noiseFile.fileName}</p>
+                        <p className="text-xs text-space-400">
+                          {(noiseFile.fileSize / 1024).toFixed(1)} KB
+                        </p>
+                      </div>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setNoiseFile(null);
+                          if (noiseInputRef.current) noiseInputRef.current.value = '';
+                        }}
+                        className="p-1 rounded hover:bg-space-700/50 text-space-400 hover:text-space-200"
+                      >
+                        <X className="w-4 h-4" />
+                      </button>
+                    </div>
+                  ) : (
+                    <>
+                      <FileText className="w-10 h-10 text-space-500 mx-auto mb-3" />
+                      <p className="text-sm text-space-300 mb-1">点击上传噪声模型</p>
+                      <p className="text-xs text-space-500">支持 .json 格式</p>
+                    </>
+                  )}
+                </div>
               </div>
             </div>
           </div>

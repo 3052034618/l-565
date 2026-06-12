@@ -7,6 +7,8 @@ import { parameterEstimationService } from '../services/estimation';
 import { reportService } from '../services/report';
 import { recommendationEngine } from '../services/recommend';
 import { TaskStatus, AlertLevel, SignalSourceType } from '../../shared/types';
+import fs from 'fs';
+import path from 'path';
 
 const router = Router();
 
@@ -79,7 +81,7 @@ router.get('/tasks/:id', (req: Request, res: Response) => {
 });
 
 router.post('/tasks', (req: Request, res: Response) => {
-  const { name, detectorConfigId, noiseModelId, signalSource, createdBy } = req.body;
+  const { name, detectorConfigId, noiseModelId, signalSource, createdBy, uploadedDetectorFile, uploadedNoiseFile } = req.body;
 
   if (dataStore.isQualityPaused()) {
     return res.status(403).json({
@@ -95,6 +97,13 @@ router.post('/tasks', (req: Request, res: Response) => {
     signalSource,
     createdBy: createdBy || 'u1',
   });
+
+  if (uploadedDetectorFile || uploadedNoiseFile) {
+    dataStore.updateTaskUploadedFiles(newTask.id, {
+      detectorFile: uploadedDetectorFile,
+      noiseFile: uploadedNoiseFile,
+    });
+  }
 
   setTimeout(() => {
     workflowEngine.startTask(newTask.id);
@@ -290,22 +299,28 @@ router.post('/export', (req: Request, res: Response) => {
 });
 
 router.get('/export/:id/download', (req: Request, res: Response) => {
-  const task = dataStore.getExportTasks().find(t => t.id === req.params.id);
-  if (!task || task.status !== 'completed') {
-    return res.status(404).json({ error: '导出任务不存在或未完成' });
+  try {
+    const task = dataStore.getExportTasks().find(t => t.id === req.params.id);
+    if (!task || task.status !== 'completed') {
+      return res.status(404).json({ error: '导出任务不存在或未完成' });
+    }
+
+    const exportData = reportService.exportResponseData(
+      task.detectorConfigId,
+      task.noiseModelVersion,
+      task.timeWindowStart,
+      task.timeWindowEnd,
+      task.exportType
+    );
+
+    const safeFilename = encodeURIComponent(exportData.filename);
+    res.setHeader('Content-Disposition', `attachment; filename="${safeFilename}"`);
+    res.setHeader('Content-Type', 'application/json');
+    res.json(exportData.data);
+  } catch (err) {
+    console.error('[Export Download Error]', err);
+    res.status(500).json({ success: false, error: 'Server internal error', details: (err as Error).message });
   }
-
-  const exportData = reportService.exportResponseData(
-    task.detectorConfigId,
-    task.noiseModelVersion,
-    task.timeWindowStart,
-    task.timeWindowEnd,
-    task.exportType
-  );
-
-  res.setHeader('Content-Disposition', `attachment; filename="${exportData.filename}"`);
-  res.setHeader('Content-Type', 'application/json');
-  res.json(exportData.data);
 });
 
 // 模拟计算服务

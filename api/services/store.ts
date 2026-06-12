@@ -14,6 +14,8 @@ import {
   Recommendation,
   ExportTask,
   AdjustmentLog,
+  UploadedFileInfo,
+  AnnouncementPushRecord,
 } from '../../shared/types';
 
 class DataStore {
@@ -131,6 +133,16 @@ class DataStore {
         currentStep: '已完成审批',
         estimatedTime: 120,
         elapsedTime: 115,
+        announcementPush: {
+          pushedAt: new Date(now - 6 * 24 * 3600 * 1000).toISOString(),
+          status: 'success',
+          eventId: 'GW20260607_001',
+        },
+        uploadedDetectorFile: {
+          fileName: 'LIGO-detector-config.json',
+          fileSize: 15_360,
+          uploadedAt: new Date(now - 7 * 24 * 3600 * 1000).toISOString(),
+        },
       },
       {
         id: 't2',
@@ -495,6 +507,34 @@ class DataStore {
       task.status = status;
       if (progress !== undefined) task.progress = progress;
       if (currentStep) task.currentStep = currentStep;
+      task.updatedAt = new Date().toISOString();
+      return task;
+    }
+    return undefined;
+  }
+
+  updateTaskUploadedFiles(
+    id: string,
+    files: { detectorFile?: UploadedFileInfo; noiseFile?: UploadedFileInfo }
+  ): AnalysisTask | undefined {
+    const task = this.tasks.find((t) => t.id === id);
+    if (task) {
+      if (files.detectorFile) {
+        task.uploadedDetectorFile = files.detectorFile;
+      }
+      if (files.noiseFile) {
+        task.uploadedNoiseFile = files.noiseFile;
+      }
+      task.updatedAt = new Date().toISOString();
+      return task;
+    }
+    return undefined;
+  }
+
+  setAnnouncementPush(taskId: string, record: AnnouncementPushRecord): AnalysisTask | undefined {
+    const task = this.tasks.find((t) => t.id === taskId);
+    if (task) {
+      task.announcementPush = record;
       task.updatedAt = new Date().toISOString();
       return task;
     }
