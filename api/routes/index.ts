@@ -89,6 +89,43 @@ router.post('/tasks', (req: Request, res: Response) => {
     });
   }
 
+  const validateDetectorFile = (file: any): string | null => {
+    if (!file) return null;
+    if (!file.parsedDetectorConfig) return null;
+    const cfg = file.parsedDetectorConfig;
+    if (cfg.armLength === undefined) return '探测器文件缺少 armLength';
+    if (typeof cfg.armLength !== 'number' || cfg.armLength <= 0) return '探测器文件 armLength 必须是正数';
+    if (cfg.laserPower === undefined) return '探测器文件缺少 laserPower';
+    if (typeof cfg.laserPower !== 'number' || cfg.laserPower <= 0) return '探测器文件 laserPower 必须是正数';
+    return null;
+  };
+
+  const validateNoiseFile = (file: any): string | null => {
+    if (!file) return null;
+    if (!file.parsedNoiseModel) return null;
+    const nm = file.parsedNoiseModel;
+    if (!nm.version) return '噪声文件缺少 version（版本号）';
+    if (typeof nm.version !== 'string') return '噪声文件 version 必须是字符串';
+    if (nm.spectrum) {
+      if (!Array.isArray(nm.spectrum.frequencies) || !Array.isArray(nm.spectrum.values)) {
+        return '噪声文件 spectrum 数据格式错误';
+      }
+      if (nm.spectrum.frequencies.length !== nm.spectrum.values.length) {
+        return '噪声文件 spectrum 频率和值长度不一致';
+      }
+    }
+    return null;
+  };
+
+  const detErr = validateDetectorFile(uploadedDetectorFile);
+  if (detErr) {
+    return res.status(400).json({ error: '上传的探测器参数文件不合法：' + detErr });
+  }
+  const noiseErr = validateNoiseFile(uploadedNoiseFile);
+  if (noiseErr) {
+    return res.status(400).json({ error: '上传的噪声模型文件不合法：' + noiseErr });
+  }
+
   const newTask = dataStore.addTask({
     name,
     status: TaskStatus.PENDING_VALIDATION,
@@ -282,47 +319,17 @@ router.get('/report/:id/pdf', (req: Request, res: Response) => {
   });
 });
 
-router.get('/report/:id/pdf/download', (req: Request, res: Response) => {
-  const reportData = reportService.generateReportData(req.params.id);
-  if (!reportData) {
-    return res.status(404).json({ error: '任务不存在或没有结果数据' });
+router.get('/report/:id/pdf/download', async (req: Request, res: Response) => {
+  const pdfResult = await reportService.generatePDFReport(req.params.id);
+  if (!pdfResult.success || !pdfResult.buffer || !pdfResult.filename) {
+    return res.status(404).json({ error: pdfResult.message || '任务不存在或没有结果数据' });
   }
 
-  const { task, result, detector } = reportData;
-  const noiseModel = dataStore.getNoiseModelById(task.noiseModelId);
-
-  const detectorDisplayName = task.uploadedDetectorFile?.parsedDetectorConfig?.name || detector?.name || '未知探测器';
-  const noiseModelDisplayName = task.uploadedNoiseFile?.parsedNoiseModel?.name || noiseModel?.name || '未知噪声模型';
-  const noiseModelDisplayVersion = task.uploadedNoiseFile?.parsedNoiseModel?.version || noiseModel?.version || 'v1.0';
-
-  const pdfData = {
-    taskName: task.name,
-    taskId: task.id,
-    createdAt: task.createdAt,
-    detectorName: detectorDisplayName,
-    noiseModelVersion: noiseModelDisplayVersion,
-    signalSourceType: task.signalSource.type,
-    mass1: task.signalSource.mass1,
-    mass2: task.signalSource.mass2,
-    spin1: task.signalSource.spin1,
-    spin2: task.signalSource.spin2,
-    distance: task.signalSource.distance,
-    snr: result.snr,
-    sensitivityCurve: result.sensitivityCurve,
-    noisePowerSpectrum: result.noisePowerSpectrum,
-    injectedSignal: result.injectedSignal,
-    posteriorSamples: result.posteriorSamples,
-  };
-
-  const filename = `GW_Report_${task.id}.json`;
-  const safeFilename = encodeURIComponent(filename);
+  const safeFilename = encodeURIComponent(pdfResult.filename);
   res.setHeader('Content-Disposition', `attachment; filename="${safeFilename}"`);
-  res.setHeader('Content-Type', 'application/json');
-  res.json({
-    format: 'pdf_report_data',
-    description: '前端可直接用此数据调用 generatePDFReport() 生成PDF',
-    data: pdfData,
-  });
+  res.setHeader('Content-Type', 'application/pdf');
+  res.setHeader('Content-Length', pdfResult.buffer.length.toString());
+  res.send(pdfResult.buffer);
 });
 
 // 推荐

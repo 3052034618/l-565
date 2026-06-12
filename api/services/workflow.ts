@@ -1,5 +1,5 @@
 import { dataStore } from './store';
-import { TaskStatus, AlertLevel, AnalysisTask } from '../../shared/types';
+import { TaskStatus, AlertLevel, AnalysisTask, DetectorConfig, NoiseModel, FrequencySeries } from '../../shared/types';
 import { interferometerService } from './interferometer';
 import { noiseSimulationService } from './noise';
 import { parameterEstimationService } from './estimation';
@@ -10,6 +10,59 @@ const NOISE_STATIONARITY_PVALUE = 0.05;
 
 class WorkflowEngine {
   private activeTasks: Map<string, NodeJS.Timeout> = new Map();
+
+  private getEffectiveDetector(taskId: string): DetectorConfig | undefined {
+    const task = dataStore.getTaskById(taskId);
+    if (!task) return undefined;
+
+    const base = dataStore.getDetectorConfigById(task.detectorConfigId);
+    if (!base) return undefined;
+
+    const uploaded = task.uploadedDetectorFile?.parsedDetectorConfig;
+    if (!uploaded) return base;
+
+    return {
+      ...base,
+      ...(uploaded.name ? { name: uploaded.name } : {}),
+      armLength: uploaded.armLength ?? base.armLength,
+      laserPower: uploaded.laserPower ?? base.laserPower,
+      wavelength: uploaded.wavelength ?? base.wavelength,
+      mirrorMass: uploaded.mirrorMass ?? base.mirrorMass,
+      suspensionType: uploaded.suspensionType ?? base.suspensionType,
+      configuration: uploaded.configuration ?? base.configuration,
+    };
+  }
+
+  private getEffectiveNoiseVersion(taskId: string): string {
+    const task = dataStore.getTaskById(taskId);
+    if (!task) return 'v1.0';
+
+    const uploadedVersion = task.uploadedNoiseFile?.parsedNoiseModel?.version;
+    if (uploadedVersion) return uploadedVersion;
+
+    const noiseModel = dataStore.getNoiseModelById(task.noiseModelId);
+    return noiseModel?.version || 'v1.0';
+  }
+
+  private getEffectiveSpectrum(taskId: string): FrequencySeries | undefined {
+    const task = dataStore.getTaskById(taskId);
+    if (!task) return undefined;
+
+    const uploadedSpectrum = task.uploadedNoiseFile?.parsedNoiseModel?.spectrum;
+    if (uploadedSpectrum && uploadedSpectrum.frequencies?.length > 0) {
+      return uploadedSpectrum as FrequencySeries;
+    }
+
+    const detector = this.getEffectiveDetector(taskId);
+    const noiseModel = dataStore.getNoiseModelById(task.noiseModelId);
+    if (!detector || !noiseModel) return undefined;
+
+    const sensitivity = interferometerService.computeSensitivityCurve(detector, noiseModel, { min: 10, max: 2000 });
+    return {
+      frequencies: sensitivity.frequencies,
+      values: sensitivity.values.map(v => v * v),
+    };
+  }
 
   async startTask(taskId: string): Promise<AnalysisTask | undefined> {
     const task = dataStore.getTaskById(taskId);
@@ -107,7 +160,7 @@ class WorkflowEngine {
     const task = dataStore.getTaskById(taskId);
     if (!task) return;
 
-    const detector = dataStore.getDetectorConfigById(task.detectorConfigId);
+    const detector = this.getEffectiveDetector(taskId);
     if (!detector) return;
 
     const response = interferometerService.buildInterferometerResponse(detector);
@@ -116,6 +169,7 @@ class WorkflowEngine {
     console.log(`[Task ${taskId}] 干涉仪模型构建完成：`);
     console.log(`  - 臂长: ${response.armLength}m`);
     console.log(`  - 精细度: ${response.finesse}`);
+    console.log(`  - 激光功率: ${detector.laserPower}W`);
     console.log(`  - 光子计数噪声: ${photonStats.photonNoise.toExponential(2)}`);
   }
 
@@ -123,24 +177,25 @@ class WorkflowEngine {
     const task = dataStore.getTaskById(taskId);
     if (!task) return { isStationary: true, varianceRatio: 0, pValue: 1 };
 
-    const detector = dataStore.getDetectorConfigById(task.detectorConfigId);
-    const noiseModel = dataStore.getNoiseModelById(task.noiseModelId);
-    if (!detector || !noiseModel) return { isStationary: true, varianceRatio: 0, pValue: 1 };
+    const noisePowerSpectrum = this.getEffectiveSpectrum(taskId);
+    if (!noisePowerSpectrum) return { isStationary: true, varianceRatio: 0, pValue: 1 };
 
-    const sensitivity = interferometerService.computeSensitivityCurve(detector, noiseModel, { min: 10, max: 2000 });
+    const sensitivity = {
+      frequencies: noisePowerSpectrum.frequencies,
+      values: noisePowerSpectrum.values.map(v => Math.sqrt(v)),
+    };
+
     const timeDomainNoise = noiseSimulationService.generateTimeDomainNoise(sensitivity, 8, 4096);
     const stationarity = noiseSimulationService.checkNoiseStationarity(timeDomainNoise);
 
     const result = dataStore.getResult(taskId);
     if (result) {
       result.sensitivityCurve = sensitivity;
-      result.noisePowerSpectrum = {
-        frequencies: sensitivity.frequencies,
-        values: sensitivity.values.map(v => v * v),
-      };
+      result.noisePowerSpectrum = noisePowerSpectrum;
       result.combinedData = timeDomainNoise;
     }
 
+    console.log(`[Task ${taskId}] 噪声模拟完成，使用版本: ${this.getEffectiveNoiseVersion(taskId)}`);
     return stationarity;
   }
 
@@ -168,15 +223,19 @@ class WorkflowEngine {
     const task = dataStore.getTaskById(taskId);
     if (!task) throw new Error('Task not found');
 
-    const detector = dataStore.getDetectorConfigById(task.detectorConfigId);
-    const noiseModel = dataStore.getNoiseModelById(task.noiseModelId);
-    if (!detector || !noiseModel) throw new Error('Config not found');
+    const detector = this.getEffectiveDetector(taskId);
+    if (!detector) throw new Error('Detector config not found');
 
-    const sensitivity = interferometerService.computeSensitivityCurve(detector, noiseModel, { min: 10, max: 2000 });
+    const sensitivity = {
+      frequencies: this.getEffectiveSpectrum(taskId)!.frequencies,
+      values: this.getEffectiveSpectrum(taskId)!.values.map(v => Math.sqrt(v)),
+    };
+
     const result = parameterEstimationService.runFullAnalysis(task.signalSource, detector, sensitivity);
     result.taskId = taskId;
 
     dataStore.setResult(taskId, result);
+    console.log(`[Task ${taskId}] 参数估计完成，SNR: ${result.snr.toFixed(2)}`);
     return result;
   }
 

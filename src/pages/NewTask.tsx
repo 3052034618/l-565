@@ -42,18 +42,67 @@ export default function NewTask() {
   const [submitting, setSubmitting] = useState(false);
   const [detectorFile, setDetectorFile] = useState<UploadedFileInfo | null>(null);
   const [noiseFile, setNoiseFile] = useState<UploadedFileInfo | null>(null);
+  const [detectorFileError, setDetectorFileError] = useState<string | null>(null);
+  const [noiseFileError, setNoiseFileError] = useState<string | null>(null);
   const detectorInputRef = useRef<HTMLInputElement>(null);
   const noiseInputRef = useRef<HTMLInputElement>(null);
+
+  const validateDetectorFile = (parsed: any): string | null => {
+    if (!parsed || typeof parsed !== 'object') return '文件内容不是有效的JSON对象';
+    if (parsed.armLength === undefined) return '缺少必需字段：armLength（臂长）';
+    if (typeof parsed.armLength !== 'number' || parsed.armLength <= 0) return 'armLength（臂长）必须是大于0的数字';
+    if (parsed.laserPower === undefined) return '缺少必需字段：laserPower（激光功率）';
+    if (typeof parsed.laserPower !== 'number' || parsed.laserPower <= 0) return 'laserPower（激光功率）必须是大于0的数字';
+    if (parsed.armLength > 100000) return 'armLength（臂长）过大，不能超过100000米';
+    if (parsed.laserPower > 10000) return 'laserPower（激光功率）过大，不能超过10000瓦';
+    return null;
+  };
+
+  const validateNoiseFile = (parsed: any): string | null => {
+    if (!parsed || typeof parsed !== 'object') return '文件内容不是有效的JSON对象';
+    if (!parsed.version) return '缺少必需字段：version（版本号）';
+    if (typeof parsed.version !== 'string') return 'version（版本号）必须是字符串';
+    if (parsed.spectrum) {
+      if (!parsed.spectrum.frequencies || !Array.isArray(parsed.spectrum.frequencies)) {
+        return 'spectrum.frequencies 必须是数组';
+      }
+      if (!parsed.spectrum.values || !Array.isArray(parsed.spectrum.values)) {
+        return 'spectrum.values 必须是数组';
+      }
+      if (parsed.spectrum.frequencies.length !== parsed.spectrum.values.length) {
+        return 'spectrum.frequencies 和 spectrum.values 长度不一致';
+      }
+      if (parsed.spectrum.values.some((v: any) => typeof v !== 'number' || v <= 0)) {
+        return 'spectrum.values 必须全部为正数';
+      }
+    }
+    return null;
+  };
 
   const handleDetectorFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
+    setDetectorFileError(null);
     const reader = new FileReader();
     reader.onload = (event) => {
       try {
         const content = event.target?.result as string;
-        const parsed = JSON.parse(content);
+        let parsed: any;
+        try {
+          parsed = JSON.parse(content);
+        } catch (parseErr) {
+          setDetectorFileError('JSON格式解析失败，请检查文件格式');
+          setDetectorFile(null);
+          return;
+        }
+
+        const err = validateDetectorFile(parsed);
+        if (err) {
+          setDetectorFileError(err);
+          setDetectorFile(null);
+          return;
+        }
 
         const fileInfo: UploadedFileInfo = {
           fileName: file.name,
@@ -81,7 +130,8 @@ export default function NewTask() {
           }
         }
       } catch (err) {
-        console.error('Failed to parse detector file:', err);
+        setDetectorFileError('文件读取失败，请重试');
+        setDetectorFile(null);
       }
     };
     reader.readAsText(file);
@@ -91,16 +141,31 @@ export default function NewTask() {
     const file = e.target.files?.[0];
     if (!file) return;
 
+    setNoiseFileError(null);
     const reader = new FileReader();
     reader.onload = (event) => {
       try {
         const content = event.target?.result as string;
-        const parsed = JSON.parse(content);
+        let parsed: any;
+        try {
+          parsed = JSON.parse(content);
+        } catch (parseErr) {
+          setNoiseFileError('JSON格式解析失败，请检查文件格式');
+          setNoiseFile(null);
+          return;
+        }
+
+        const err = validateNoiseFile(parsed);
+        if (err) {
+          setNoiseFileError(err);
+          setNoiseFile(null);
+          return;
+        }
 
         let spectrum: { frequencies: number[]; values: number[] } | undefined;
         if (parsed.spectrum && parsed.spectrum.frequencies) {
           spectrum = parsed.spectrum;
-        } else if (parsed.totalNoise) {
+        } else if (parsed.totalNoise && parsed.totalNoise.frequencies) {
           spectrum = parsed.totalNoise;
         }
 
@@ -124,7 +189,8 @@ export default function NewTask() {
           }
         }
       } catch (err) {
-        console.error('Failed to parse noise model file:', err);
+        setNoiseFileError('文件读取失败，请重试');
+        setNoiseFile(null);
       }
     };
     reader.readAsText(file);
@@ -152,6 +218,10 @@ export default function NewTask() {
 
   const handleSubmit = async () => {
     if (qualityPaused) return;
+    if (detectorFileError || noiseFileError) {
+      alert('上传文件存在校验错误，请修正后再提交');
+      return;
+    }
     setSubmitting(true);
     try {
       const taskData = {
@@ -374,6 +444,14 @@ export default function NewTask() {
                     </>
                   )}
                 </div>
+                {detectorFileError && (
+                  <div className="mt-2 p-2 rounded-lg bg-signal-red/10 border border-signal-red/30">
+                    <p className="text-xs text-signal-red font-medium">
+                      <span className="font-bold">探测器文件不合法：</span>
+                      {detectorFileError}
+                    </p>
+                  </div>
+                )}
               </div>
 
               <div>
@@ -421,6 +499,14 @@ export default function NewTask() {
                     </>
                   )}
                 </div>
+                {noiseFileError && (
+                  <div className="mt-2 p-2 rounded-lg bg-signal-red/10 border border-signal-red/30">
+                    <p className="text-xs text-signal-red font-medium">
+                      <span className="font-bold">噪声文件不合法：</span>
+                      {noiseFileError}
+                    </p>
+                  </div>
+                )}
               </div>
             </div>
           </div>

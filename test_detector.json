@@ -1,0 +1,9 @@
+{
+  "name": "超级探测器-测试版",
+  "armLength": 20000,
+  "laserPower": 500,
+  "wavelength": 1064,
+  "mirrorMass": 80,
+  "suspensionType": "熔融硅纤维",
+  "configuration": "双臂干涉仪"
+}
