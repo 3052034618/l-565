@@ -53,39 +53,52 @@ export default function TaskDetail() {
   const [activeTab, setActiveTab] = useState<'overview' | 'sensitivity' | 'noise' | 'waveform' | 'posterior' | 'approvals' | 'alerts'>('overview');
   const [generatingPDF, setGeneratingPDF] = useState(false);
 
+  const detectorDisplayName = currentTask?.uploadedDetectorFile?.parsedDetectorConfig?.name || currentDetector?.name || '-';
+  const noiseModelDisplayName = currentTask?.uploadedNoiseFile?.parsedNoiseModel?.name || currentNoiseModel?.name || '-';
+  const noiseModelDisplayVersion = currentTask?.uploadedNoiseFile?.parsedNoiseModel?.version || currentNoiseModel?.version || '-';
+
   const handleGeneratePDF = async () => {
-    if (!currentTask || !currentResult || !currentDetector || !currentNoiseModel) return;
+    if (!currentTask || !currentResult) return;
 
     setGeneratingPDF(true);
     try {
-      await new Promise((resolve) => setTimeout(resolve, 100));
+      const res = await fetch(`/api/report/${currentTask.id}/pdf`);
+      if (!res.ok) throw new Error('获取报告数据失败');
+      const reportData = await res.json();
 
       generatePDFReport({
-        taskName: currentTask.name,
-        taskId: currentTask.id,
-        createdAt: currentTask.createdAt,
-        detectorName: currentDetector.name,
-        noiseModelVersion: currentNoiseModel.version,
-        signalSourceType: currentTask.signalSource.type,
-        mass1: currentTask.signalSource.mass1,
-        mass2: currentTask.signalSource.mass2,
-        spin1: currentTask.signalSource.spin1,
-        spin2: currentTask.signalSource.spin2,
-        distance: currentTask.signalSource.distance,
-        snr: currentResult.snr,
-        sensitivityFrequencies: currentResult.sensitivityCurve.frequencies,
-        sensitivityValues: currentResult.sensitivityCurve.values,
-        noiseFrequencies: currentResult.noisePowerSpectrum.frequencies,
-        noiseValues: currentResult.noisePowerSpectrum.values,
-        waveformTimes: currentResult.injectedSignal.times,
-        waveformValues: currentResult.injectedSignal.values,
-        massPosterior: currentResult.posteriorSamples.mass1,
-        spinPosterior: currentResult.posteriorSamples.spin1,
-        distancePosterior: currentResult.posteriorSamples.distance,
-        massTrue: currentTask.signalSource.mass1,
-        spinTrue: currentTask.signalSource.spin1,
-        distanceTrue: currentTask.signalSource.distance,
+        taskName: reportData.taskName,
+        taskId: reportData.taskId,
+        createdAt: reportData.createdAt,
+        detectorName: reportData.detectorName,
+        noiseModelVersion: reportData.noiseModelVersion,
+        signalSourceType: reportData.signalSourceType,
+        mass1: reportData.mass1,
+        mass2: reportData.mass2,
+        spin1: reportData.spin1,
+        spin2: reportData.spin2,
+        distance: reportData.distance,
+        snr: reportData.snr,
+        sensitivityFrequencies: reportData.sensitivityCurve.frequencies,
+        sensitivityValues: reportData.sensitivityCurve.values,
+        noiseFrequencies: reportData.noisePowerSpectrum.frequencies,
+        noiseValues: reportData.noisePowerSpectrum.values,
+        waveformTimes: reportData.injectedSignal.times,
+        waveformValues: reportData.injectedSignal.values,
+        mass1Posterior: reportData.posteriorSamples.mass1,
+        mass2Posterior: reportData.posteriorSamples.mass2,
+        spin1Posterior: reportData.posteriorSamples.spin1,
+        spin2Posterior: reportData.posteriorSamples.spin2,
+        distancePosterior: reportData.posteriorSamples.distance,
+        mass1True: reportData.mass1,
+        mass2True: reportData.mass2,
+        spin1True: reportData.spin1,
+        spin2True: reportData.spin2,
+        distanceTrue: reportData.distance,
       });
+    } catch (err) {
+      console.error('PDF生成失败:', err);
+      alert('报告生成失败，请稍后重试');
     } finally {
       setGeneratingPDF(false);
     }
@@ -259,11 +272,11 @@ export default function TaskDetail() {
               <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
                 <div className="p-3 rounded-lg bg-space-800/30">
                   <p className="text-xs text-space-400 mb-1">探测器构型</p>
-                  <p className="text-sm font-medium text-space-100">{currentDetector?.name || '-'}</p>
+                  <p className="text-sm font-medium text-space-100">{detectorDisplayName}</p>
                 </div>
                 <div className="p-3 rounded-lg bg-space-800/30">
                   <p className="text-xs text-space-400 mb-1">噪声模型</p>
-                  <p className="text-sm font-medium text-space-100">{currentNoiseModel?.name || '-'}</p>
+                  <p className="text-sm font-medium text-space-100">{noiseModelDisplayName} ({noiseModelDisplayVersion})</p>
                 </div>
                 <div className="p-3 rounded-lg bg-space-800/30">
                   <p className="text-xs text-space-400 mb-1">信号源类型</p>
@@ -308,8 +321,16 @@ export default function TaskDetail() {
                             {(currentTask.uploadedDetectorFile.fileSize / 1024).toFixed(1)} KB
                           </p>
                           <p className="text-xs text-cyber-400 mt-1">
-                            探测器构型: {currentDetector?.name || '-'}
+                            探测器构型: {detectorDisplayName}
                           </p>
+                          {currentTask.uploadedDetectorFile?.parsedDetectorConfig?.armLength !== undefined && (
+                            <p className="text-xs text-space-400 mt-1">
+                              臂长: {currentTask.uploadedDetectorFile.parsedDetectorConfig.armLength} m
+                              {currentTask.uploadedDetectorFile.parsedDetectorConfig.laserPower !== undefined && (
+                                <> · 激光功率: {currentTask.uploadedDetectorFile.parsedDetectorConfig.laserPower} W</>
+                              )}
+                            </p>
+                          )}
                           <p className="text-xs text-space-500 mt-1">
                             上传于 {new Date(currentTask.uploadedDetectorFile.uploadedAt).toLocaleString('zh-CN')}
                           </p>
@@ -331,8 +352,13 @@ export default function TaskDetail() {
                             {(currentTask.uploadedNoiseFile.fileSize / 1024).toFixed(1)} KB
                           </p>
                           <p className="text-xs text-signal-purple mt-1">
-                            噪声版本: {currentNoiseModel?.version || '-'}
+                            噪声版本: {noiseModelDisplayName} ({noiseModelDisplayVersion})
                           </p>
+                          {currentTask.uploadedNoiseFile?.parsedNoiseModel?.spectrum && (
+                            <p className="text-xs text-space-400 mt-1">
+                              含自定义谱数据: {currentTask.uploadedNoiseFile.parsedNoiseModel.spectrum.frequencies.length} 个频点
+                            </p>
+                          )}
                           <p className="text-xs text-space-500 mt-1">
                             上传于 {new Date(currentTask.uploadedNoiseFile.uploadedAt).toLocaleString('zh-CN')}
                           </p>

@@ -20,11 +20,15 @@ interface PDFReportData {
   noiseValues: number[];
   waveformTimes: number[];
   waveformValues: number[];
-  massPosterior: number[];
-  spinPosterior: number[];
+  mass1Posterior: number[];
+  mass2Posterior: number[];
+  spin1Posterior: number[];
+  spin2Posterior: number[];
   distancePosterior: number[];
-  massTrue: number;
-  spinTrue: number;
+  mass1True: number;
+  mass2True: number;
+  spin1True: number;
+  spin2True: number;
   distanceTrue: number;
 }
 
@@ -203,7 +207,7 @@ function getHistogramOption(data: number[], trueValue: number, title: string, un
     };
   }
 
-  const bins = Math.min(30, Math.max(10, Math.floor(Math.sqrt(validData.length))));
+  const bins = Math.min(25, Math.max(10, Math.floor(Math.sqrt(validData.length))));
   const min = Math.min(...validData);
   const max = Math.max(...validData);
   const range = max - min;
@@ -224,8 +228,20 @@ function getHistogramOption(data: number[], trueValue: number, title: string, un
     if (idx >= 0 && idx < bins) counts[idx]++;
   });
 
-  const binCenters = counts.map((_, i) => min + (i + 0.5) * binWidth);
+  const binLabels = counts.map((_, i) => (min + (i + 0.5) * binWidth).toFixed(2));
   const maxCount = Math.max(...counts) || 1;
+  const trueIdx = Math.min(Math.max(Math.floor((trueValue - min) / binWidth), 0), bins - 1);
+
+  const markLineData = counts.map((_, i) => {
+    if (i === trueIdx) {
+      return {
+        xAxis: binLabels[i],
+        lineStyle: { color: '#ff6b35', width: 2, type: 'dashed' },
+        label: { show: false },
+      };
+    }
+    return null;
+  }).filter(Boolean);
 
   return {
     backgroundColor: '#0a1628',
@@ -235,16 +251,15 @@ function getHistogramOption(data: number[], trueValue: number, title: string, un
       textStyle: { color: '#e0f0ff', fontSize: 14 },
       left: 'center',
     },
-    grid: { left: 50, right: 20, top: 40, bottom: 40 },
+    grid: { left: 50, right: 20, top: 40, bottom: 60 },
     xAxis: {
-      type: 'value',
+      type: 'category',
       name: unit,
       nameTextStyle: { color: '#6b8fa8', fontSize: 10 },
+      data: binLabels,
       axisLine: { lineStyle: { color: 'rgba(0, 212, 255, 0.3)' } },
-      axisLabel: { color: '#8ba9c0', fontSize: 9 },
+      axisLabel: { color: '#8ba9c0', fontSize: 8, rotate: 45, interval: 'auto' },
       splitLine: { show: false },
-      min: min,
-      max: max,
     },
     yAxis: {
       type: 'value',
@@ -254,20 +269,23 @@ function getHistogramOption(data: number[], trueValue: number, title: string, un
       axisLabel: { color: '#8ba9c0', fontSize: 9 },
       splitLine: { show: false },
       min: 0,
-      max: maxCount * 1.2,
+      max: maxCount * 1.3,
     },
     series: [
       {
         type: 'bar',
-        data: binCenters.map((c, i) => [c, counts[i]]),
-        barWidth: binWidth * 0.6,
+        data: counts,
         itemStyle: { color: 'rgba(0, 212, 255, 0.6)' },
-      },
-      {
-        type: 'line',
-        data: [[trueValue, 0], [trueValue, maxCount * 1.1]],
-        lineStyle: { color: '#ff6b35', width: 2, type: 'dashed' },
-        symbol: 'none',
+        markLine: {
+          symbol: 'none',
+          silent: true,
+          data: [
+            {
+              xAxis: binLabels[trueIdx],
+              lineStyle: { color: '#ff6b35', width: 2, type: 'dashed' },
+            },
+          ],
+        },
       },
     ],
   };
@@ -373,47 +391,73 @@ export function generatePDFReport(data: PDFReportData): void {
     y += chartHeightMm + 8;
   };
 
-  const sensitivityImg = renderChartToDataURL(
+  const safeRender = (fn: () => string, name: string): string | null => {
+    try {
+      return fn();
+    } catch (e: any) {
+      doc.setTextColor(255, 100, 100);
+      doc.setFontSize(10);
+      doc.text(`${name} FAILED: ${e?.message || 'unknown'}`, margin, y);
+      y += 10;
+      return null;
+    }
+  };
+
+  const sensitivityImg = safeRender(() => renderChartToDataURL(
     getSensitivityOption(data.sensitivityFrequencies, data.sensitivityValues),
     chartPxWidth,
     chartPxHeight
-  );
-  addChart(sensitivityImg, 'Sensitivity Curve');
+  ), 'Sensitivity');
+  if (sensitivityImg) addChart(sensitivityImg, 'Sensitivity Curve');
 
-  const noiseImg = renderChartToDataURL(
+  const noiseImg = safeRender(() => renderChartToDataURL(
     getNoiseOption(data.noiseFrequencies, data.noiseValues),
     chartPxWidth,
     chartPxHeight
-  );
-  addChart(noiseImg, 'Noise Power Spectrum');
+  ), 'Noise');
+  if (noiseImg) addChart(noiseImg, 'Noise Power Spectrum');
 
-  const waveformImg = renderChartToDataURL(
+  const waveformImg = safeRender(() => renderChartToDataURL(
     getWaveformOption(data.waveformTimes, data.waveformValues),
     chartPxWidth,
     chartPxHeight
-  );
-  addChart(waveformImg, 'Injected Signal Waveform');
+  ), 'Waveform');
+  if (waveformImg) addChart(waveformImg, 'Injected Signal Waveform');
 
-  const massHistImg = renderChartToDataURL(
-    getHistogramOption(data.massPosterior, data.massTrue, 'Mass Posterior', 'Msun'),
+  const mass1HistImg = safeRender(() => renderChartToDataURL(
+    getHistogramOption(data.mass1Posterior, data.mass1True, 'Mass 1 Posterior', 'Msun'),
     chartPxWidth,
     chartPxHeight
-  );
-  addChart(massHistImg, 'Mass Posterior Distribution');
+  ), 'Mass1Hist');
+  if (mass1HistImg) addChart(mass1HistImg, 'Mass 1 Posterior Distribution');
 
-  const spinHistImg = renderChartToDataURL(
-    getHistogramOption(data.spinPosterior, data.spinTrue, 'Spin Posterior', ''),
+  const mass2HistImg = safeRender(() => renderChartToDataURL(
+    getHistogramOption(data.mass2Posterior, data.mass2True, 'Mass 2 Posterior', 'Msun'),
     chartPxWidth,
     chartPxHeight
-  );
-  addChart(spinHistImg, 'Spin Posterior Distribution');
+  ), 'Mass2Hist');
+  if (mass2HistImg) addChart(mass2HistImg, 'Mass 2 Posterior Distribution');
 
-  const distHistImg = renderChartToDataURL(
+  const spin1HistImg = safeRender(() => renderChartToDataURL(
+    getHistogramOption(data.spin1Posterior, data.spin1True, 'Spin 1 Posterior', ''),
+    chartPxWidth,
+    chartPxHeight
+  ), 'Spin1Hist');
+  if (spin1HistImg) addChart(spin1HistImg, 'Spin 1 Posterior Distribution');
+
+  const spin2HistImg = safeRender(() => renderChartToDataURL(
+    getHistogramOption(data.spin2Posterior, data.spin2True, 'Spin 2 Posterior', ''),
+    chartPxWidth,
+    chartPxHeight
+  ), 'Spin2Hist');
+  if (spin2HistImg) addChart(spin2HistImg, 'Spin 2 Posterior Distribution');
+
+  const distHistImg = safeRender(() => renderChartToDataURL(
     getHistogramOption(data.distancePosterior, data.distanceTrue, 'Distance Posterior', 'Mpc'),
     chartPxWidth,
     chartPxHeight
-  );
-  addChart(distHistImg, 'Distance Posterior Distribution');
+  ), 'DistHist');
+  if (distHistImg) addChart(distHistImg, 'Distance Posterior Distribution');
 
   const fileName = `GW_Report_${data.taskId}.pdf`;
   doc.save(fileName);

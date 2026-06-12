@@ -357,6 +357,23 @@ class DataStore {
 
   private generateMockResult(task: AnalysisTask): EstimationResult {
     const { signalSource } = task;
+
+    const detConfig = this.detectorConfigs.find((d) => d.id === task.detectorConfigId);
+    const noiseModel = this.noiseModels.find((n) => n.id === task.noiseModelId);
+
+    let armLength = detConfig?.armLength ?? 4000;
+    let laserPower = detConfig?.laserPower ?? 20;
+
+    if (task.uploadedDetectorFile?.parsedDetectorConfig) {
+      const p = task.uploadedDetectorFile.parsedDetectorConfig;
+      if (p.armLength !== undefined && p.armLength > 0) armLength = p.armLength;
+      if (p.laserPower !== undefined && p.laserPower > 0) laserPower = p.laserPower;
+    }
+
+    const armFactor = Math.sqrt(4000 / armLength);
+    const powerFactor = Math.pow(20 / laserPower, 0.25);
+    const scaleFactor = armFactor * powerFactor;
+
     const generatePosterior = (trueValue: number, sigma: number, n: number = 1000) => {
       return Array.from({ length: n }, () => {
         const u1 = Math.random();
@@ -383,14 +400,22 @@ class DataStore {
       };
     };
 
-    const freqs = Array.from({ length: 200 }, (_, i) => 10 + i * 5);
-    const sensitivity = freqs.map((f) => {
-      const seismic = 1e-19 * Math.pow(f / 10, -2);
-      const thermal = 5e-24 * Math.pow(f / 100, -1);
-      const shot = 3e-24 * Math.pow(f / 100, 0.5);
-      const rad = 2e-24 * Math.pow(f / 100, -2);
-      return Math.sqrt(seismic * seismic + thermal * thermal + shot * shot + rad * rad);
-    });
+    let freqs = Array.from({ length: 200 }, (_, i) => 10 + i * 5);
+    let sensitivity: number[];
+
+    const uploadedSpectrum = task.uploadedNoiseFile?.parsedNoiseModel?.spectrum;
+    if (uploadedSpectrum && uploadedSpectrum.frequencies && uploadedSpectrum.frequencies.length > 0) {
+      freqs = uploadedSpectrum.frequencies;
+      sensitivity = uploadedSpectrum.values.map((v) => Math.sqrt(v));
+    } else {
+      sensitivity = freqs.map((f) => {
+        const seismic = 1e-19 * Math.pow(f / 10, -2) * scaleFactor;
+        const thermal = 5e-24 * Math.pow(f / 100, -1) * scaleFactor;
+        const shot = 3e-24 * Math.pow(f / 100, 0.5) * scaleFactor;
+        const rad = 2e-24 * Math.pow(f / 100, -2) * scaleFactor;
+        return Math.sqrt(seismic * seismic + thermal * thermal + shot * shot + rad * rad);
+      });
+    }
 
     const times = Array.from({ length: 1000 }, (_, i) => i * 0.001);
     const tMerge = 0.7;

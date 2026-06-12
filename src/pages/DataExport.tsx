@@ -29,6 +29,12 @@ export default function DataExport() {
     fetchDetectors();
     fetchNoiseModels();
     fetchExportTasks();
+
+    const interval = setInterval(() => {
+      fetchExportTasks();
+    }, 1000);
+
+    return () => clearInterval(interval);
   }, []);
 
   useEffect(() => {

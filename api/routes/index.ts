@@ -246,11 +246,83 @@ router.get('/report/:id', (req: Request, res: Response) => {
 });
 
 router.get('/report/:id/pdf', (req: Request, res: Response) => {
-  const result = reportService.generatePDFReport(req.params.id);
-  if (!result.success) {
-    return res.status(404).json({ error: result.message });
+  const reportData = reportService.generateReportData(req.params.id);
+  if (!reportData) {
+    return res.status(404).json({ error: '任务不存在或没有结果数据' });
   }
-  res.json({ success: true, message: result.message, downloadUrl: `/api/report/${req.params.id}/pdf/download` });
+
+  const task = reportData.task;
+  const result = reportData.result;
+  const detector = reportData.detector;
+  const noiseModel = dataStore.getNoiseModelById(task.noiseModelId);
+
+  const detectorDisplayName = task.uploadedDetectorFile?.parsedDetectorConfig?.name || detector?.name || '未知探测器';
+  const noiseModelDisplayName = task.uploadedNoiseFile?.parsedNoiseModel?.name || noiseModel?.name || '未知噪声模型';
+  const noiseModelDisplayVersion = task.uploadedNoiseFile?.parsedNoiseModel?.version || noiseModel?.version || 'v1.0';
+
+  res.json({
+    success: true,
+    downloadUrl: `/api/report/${req.params.id}/pdf/download`,
+    taskName: task.name,
+    taskId: task.id,
+    createdAt: task.createdAt,
+    detectorName: detectorDisplayName,
+    noiseModelVersion: noiseModelDisplayVersion,
+    signalSourceType: task.signalSource.type,
+    mass1: task.signalSource.mass1,
+    mass2: task.signalSource.mass2,
+    spin1: task.signalSource.spin1,
+    spin2: task.signalSource.spin2,
+    distance: task.signalSource.distance,
+    snr: result.snr,
+    sensitivityCurve: result.sensitivityCurve,
+    noisePowerSpectrum: result.noisePowerSpectrum,
+    injectedSignal: result.injectedSignal,
+    posteriorSamples: result.posteriorSamples,
+  });
+});
+
+router.get('/report/:id/pdf/download', (req: Request, res: Response) => {
+  const reportData = reportService.generateReportData(req.params.id);
+  if (!reportData) {
+    return res.status(404).json({ error: '任务不存在或没有结果数据' });
+  }
+
+  const { task, result, detector } = reportData;
+  const noiseModel = dataStore.getNoiseModelById(task.noiseModelId);
+
+  const detectorDisplayName = task.uploadedDetectorFile?.parsedDetectorConfig?.name || detector?.name || '未知探测器';
+  const noiseModelDisplayName = task.uploadedNoiseFile?.parsedNoiseModel?.name || noiseModel?.name || '未知噪声模型';
+  const noiseModelDisplayVersion = task.uploadedNoiseFile?.parsedNoiseModel?.version || noiseModel?.version || 'v1.0';
+
+  const pdfData = {
+    taskName: task.name,
+    taskId: task.id,
+    createdAt: task.createdAt,
+    detectorName: detectorDisplayName,
+    noiseModelVersion: noiseModelDisplayVersion,
+    signalSourceType: task.signalSource.type,
+    mass1: task.signalSource.mass1,
+    mass2: task.signalSource.mass2,
+    spin1: task.signalSource.spin1,
+    spin2: task.signalSource.spin2,
+    distance: task.signalSource.distance,
+    snr: result.snr,
+    sensitivityCurve: result.sensitivityCurve,
+    noisePowerSpectrum: result.noisePowerSpectrum,
+    injectedSignal: result.injectedSignal,
+    posteriorSamples: result.posteriorSamples,
+  };
+
+  const filename = `GW_Report_${task.id}.json`;
+  const safeFilename = encodeURIComponent(filename);
+  res.setHeader('Content-Disposition', `attachment; filename="${safeFilename}"`);
+  res.setHeader('Content-Type', 'application/json');
+  res.json({
+    format: 'pdf_report_data',
+    description: '前端可直接用此数据调用 generatePDFReport() 生成PDF',
+    data: pdfData,
+  });
 });
 
 // 推荐

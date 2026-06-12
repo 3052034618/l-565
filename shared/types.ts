@@ -131,6 +131,8 @@ export interface UploadedFileInfo {
   fileSize: number;
   uploadedAt: string;
   content?: string;
+  parsedDetectorConfig?: Partial<DetectorConfig> & { name?: string };
+  parsedNoiseModel?: { name?: string; version?: string; spectrum?: FrequencySeries };
 }
 
 export interface AnnouncementPushRecord {

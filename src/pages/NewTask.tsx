@@ -53,22 +53,31 @@ export default function NewTask() {
     reader.onload = (event) => {
       try {
         const content = event.target?.result as string;
+        const parsed = JSON.parse(content);
+
         const fileInfo: UploadedFileInfo = {
           fileName: file.name,
           fileSize: file.size,
           uploadedAt: new Date().toISOString(),
           content,
+          parsedDetectorConfig: {
+            name: parsed.name || parsed.configName || undefined,
+            armLength: parsed.armLength,
+            laserPower: parsed.laserPower,
+            wavelength: parsed.wavelength,
+            mirrorMass: parsed.mirrorMass,
+            suspensionType: parsed.suspensionType,
+            configuration: parsed.configuration,
+          },
         };
         setDetectorFile(fileInfo);
 
-        const parsed = JSON.parse(content);
-        if (parsed.armLength !== undefined || parsed.laserPower !== undefined) {
-          if (detectors.length > 0) {
-            const matchIdx = parsed.armLength >= 8000 ? 1 : parsed.armLength >= 3000 ? 2 : 0;
-            const match = detectors[matchIdx];
-            if (match) {
-              setFormData((prev) => ({ ...prev, detectorConfigId: match.id }));
-            }
+        if (detectors.length > 0) {
+          const arm = parsed.armLength;
+          const matchIdx = arm >= 8000 ? 1 : arm >= 3000 ? 2 : 0;
+          const match = detectors[matchIdx];
+          if (match) {
+            setFormData((prev) => ({ ...prev, detectorConfigId: match.id }));
           }
         }
       } catch (err) {
@@ -86,15 +95,28 @@ export default function NewTask() {
     reader.onload = (event) => {
       try {
         const content = event.target?.result as string;
+        const parsed = JSON.parse(content);
+
+        let spectrum: { frequencies: number[]; values: number[] } | undefined;
+        if (parsed.spectrum && parsed.spectrum.frequencies) {
+          spectrum = parsed.spectrum;
+        } else if (parsed.totalNoise) {
+          spectrum = parsed.totalNoise;
+        }
+
         const fileInfo: UploadedFileInfo = {
           fileName: file.name,
           fileSize: file.size,
           uploadedAt: new Date().toISOString(),
           content,
+          parsedNoiseModel: {
+            name: parsed.name || undefined,
+            version: parsed.version || undefined,
+            spectrum,
+          },
         };
         setNoiseFile(fileInfo);
 
-        const parsed = JSON.parse(content);
         if (parsed.version && noiseModels.length > 0) {
           const match = noiseModels.find((m) => m.version === parsed.version);
           if (match) {
